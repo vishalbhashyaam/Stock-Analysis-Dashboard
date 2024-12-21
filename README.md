@@ -20,8 +20,8 @@ An interactive Streamlit dashboard for visualizing and analyzing stock price dat
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/yourusername/stock-analysis-dashboard.git
-cd stock-analysis-dashboard
+git clone https://github.com/yourusername/Stock-Analysis-Dashboard.git
+cd Stock-Analysis-Dashboard
 ```
 
 ### 2. Install Dependencies
