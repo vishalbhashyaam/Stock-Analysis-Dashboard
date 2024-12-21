@@ -27,11 +27,22 @@ DATA_PATH = "Data/stock_prices.csv"
 if os.path.exists(DATA_PATH):
     assets = pd.read_csv(DATA_PATH)
 
-    # Data Preprocessing
+    # Data Preprocessing (Date)
     if assets['Date'].dtype == 'object':
         assets['Date'] = assets['Date'].str.replace('/', '-')
         assets['Date'] = assets['Date'].str.replace(r'-(\d)-', r'-0\1-', regex=True)
         assets['Date'] = pd.to_datetime(assets['Date'], dayfirst=True, errors='coerce')
+
+    # Handle missing dates
+    assets = assets.dropna(subset=['Date'])
+
+    # ---- PRICE CLEANING FIX ----
+    stock_options = [col for col in assets.columns if 'Price' in col]
+    for col in stock_options:
+        assets[col] = assets[col].replace({',': ''}, regex=True)  # Remove commas
+        assets[col] = pd.to_numeric(assets[col], errors='coerce')  # Convert to float
+    assets = assets.dropna(subset=stock_options)  # Drop rows with NaN prices
+    # ----------------------------
 
     # Create ordinal date column
     assets['Date_Ordinal'] = assets['Date'].apply(lambda x: x.toordinal() - assets['Date'].min().toordinal())
@@ -42,7 +53,6 @@ if os.path.exists(DATA_PATH):
         st.write(assets.head())
 
     # Stock Selection
-    stock_options = [col for col in assets.columns if 'Price' in col]
     selected_stock = st.sidebar.selectbox("📊 Select Stock", stock_options)
 
     # Visualization
@@ -74,36 +84,71 @@ if os.path.exists(DATA_PATH):
     X = assets[['Date_Ordinal']]
     y = assets[selected_stock]
 
-    if model_option == "Linear Regression":
-        model = LinearRegression()
-    elif model_option == "Ridge Regression":
-        model = Ridge(alpha=alpha)
-    elif model_option == "Lasso Regression":
-        model = Lasso(alpha=alpha)
-    elif model_option == "Random Forest Regressor":
-        model = RandomForestRegressor(n_estimators=n_estimators, random_state=42)
-    elif model_option == "Support Vector Regressor":
-        model = SVR(kernel=kernel)
-
-    model.fit(X, y)
-    full_predictions = model.predict(X)
-
-    # Regression Plot
-    st.subheader("📈 Regression Analysis")
-    regression_fig = px.line(assets, x='Date', y=selected_stock, title="Actual vs Predicted Prices")
-    if model_option == "Random Forest Regressor":
-        regression_fig.add_scatter(x=assets['Date'], y=full_predictions, mode='markers', marker=dict(color='orange'), name=f"Predicted ({model_option})")
-        regression_fig.add_scatter(x=assets['Date'], y=full_predictions, mode='lines', line=dict(color='cyan'), name=f"Prediction Line ({model_option})")
+    # Check for low variance
+    if assets[selected_stock].nunique() < 5:
+        st.warning(f"{selected_stock} has too little variance for effective regression.")
     else:
-        regression_fig.add_scatter(x=assets['Date'], y=full_predictions, mode='lines', name=f"Predicted ({model_option})")
-    st.plotly_chart(regression_fig, use_container_width=True)
+        # Train-test split to avoid overfitting
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-    # Prediction Section
+        try:
+            # Model selection
+            if model_option == "Linear Regression":
+                model = LinearRegression()
+            elif model_option == "Ridge Regression":
+                model = Ridge(alpha=alpha)
+            elif model_option == "Lasso Regression":
+                model = Lasso(alpha=alpha)
+            elif model_option == "Random Forest Regressor":
+                model = RandomForestRegressor(n_estimators=min(n_estimators, len(X) // 2), random_state=42)
+            elif model_option == "Support Vector Regressor":
+                model = SVR(kernel=kernel)
+
+            # Model fitting
+            model.fit(X_train, y_train)
+            predictions = model.predict(X_test)
+
+            # Evaluate model
+            mse = mean_squared_error(y_test, predictions)
+            r2 = r2_score(y_test, predictions)
+            st.sidebar.write(f"📊 Model Performance (Test Set):")
+            st.sidebar.write(f"Mean Squared Error: **{mse:.2f}**")
+            st.sidebar.write(f"R² Score: **{r2:.2f}**")
+
+            # Full predictions for visualization
+            full_predictions = model.predict(X)
+
+            # Regression plot
+            st.subheader("📈 Regression Analysis")
+            regression_fig = px.line(assets, x='Date', y=selected_stock, title="Actual vs Predicted Prices")
+            if model_option == "Random Forest Regressor":
+                regression_fig.add_scatter(
+                    x=assets['Date'],
+                    y=full_predictions,
+                    mode='markers+lines',
+                    marker=dict(color='orange', size=8),
+                    line=dict(color='red'),
+                    name=f"Predicted ({model_option})"
+                )
+            else:
+                regression_fig.add_scatter(
+                    x=assets['Date'],
+                    y=full_predictions,
+                    mode='lines',
+                    name=f"Predicted ({model_option})"
+                )
+            st.plotly_chart(regression_fig, use_container_width=True)
+
+        except Exception as e:
+            st.error(f"🚨 Model Training Error: {str(e)}")
+
+    # Prediction Section (Fix for Feature Name Warning)
     st.sidebar.subheader("📅 Make Predictions")
     future_date = st.sidebar.date_input("Select Future Date")
     if future_date:
         ordinal_date = pd.to_datetime(future_date).toordinal() - assets['Date'].min().toordinal()
-        future_prediction = model.predict([[ordinal_date]])[0]
+        ordinal_date = pd.DataFrame([[ordinal_date]], columns=['Date_Ordinal'])
+        future_prediction = model.predict(ordinal_date)[0]
         st.sidebar.write(f"Predicted {selected_stock} Price on {future_date}: **${future_prediction:.2f}**")
 else:
     st.error("🚨 Data file not found in 'Data/' folder. Please add a CSV file named 'stock_prices.csv'.")
