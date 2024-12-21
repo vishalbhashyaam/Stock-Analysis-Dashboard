@@ -6,6 +6,7 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.svm import SVR
 from sklearn.metrics import mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
+import os
 
 # Page Config
 st.set_page_config(page_title="Stock Regression Dashboard", layout="wide", initial_sidebar_state="expanded")
@@ -13,23 +14,20 @@ st.set_page_config(page_title="Stock Regression Dashboard", layout="wide", initi
 # Title and Description
 st.title("📈 Stock Analysis and Regression Dashboard")
 st.markdown("""
-Welcome to the Stock Analysis and Regression Dashboard. Upload your dataset to explore stock prices, perform regression analysis, and visualize predictions.
+Welcome to the Stock Analysis and Regression Dashboard. Analyze stock prices, perform regression, and visualize predictions.
 """)
 
 # Sidebar Styling
 st.sidebar.image("https://cdn-icons-png.flaticon.com/512/684/684908.png", width=80)
 st.sidebar.header("⚙️ Control Panel")
 
-# File Uploader with Session State
-if 'assets' not in st.session_state:
-    uploaded_file = st.sidebar.file_uploader("📤 Upload CSV Data", type=["csv"])
-    if uploaded_file is not None:
-        st.session_state.assets = pd.read_csv(uploaded_file)
+# Load Data Directly from Data Folder
+DATA_PATH = "Data/stock_prices.csv"
 
-if 'assets' in st.session_state:
-    assets = st.session_state.assets
+if os.path.exists(DATA_PATH):
+    assets = pd.read_csv(DATA_PATH)
 
-    # Data Preprocessing (Only apply .str before datetime conversion)
+    # Data Preprocessing
     if assets['Date'].dtype == 'object':
         assets['Date'] = assets['Date'].str.replace('/', '-')
         assets['Date'] = assets['Date'].str.replace(r'-(\d)-', r'-0\1-', regex=True)
@@ -90,7 +88,7 @@ if 'assets' in st.session_state:
     model.fit(X, y)
     full_predictions = model.predict(X)
 
-    # Regression Plot with Interactive Visualization
+    # Regression Plot
     st.subheader("📈 Regression Analysis")
     regression_fig = px.line(assets, x='Date', y=selected_stock, title="Actual vs Predicted Prices")
     if model_option == "Random Forest Regressor":
@@ -107,3 +105,5 @@ if 'assets' in st.session_state:
         ordinal_date = pd.to_datetime(future_date).toordinal() - assets['Date'].min().toordinal()
         future_prediction = model.predict([[ordinal_date]])[0]
         st.sidebar.write(f"Predicted {selected_stock} Price on {future_date}: **${future_prediction:.2f}**")
+else:
+    st.error("🚨 Data file not found in 'Data/' folder. Please add a CSV file named 'stock_prices.csv'.")
